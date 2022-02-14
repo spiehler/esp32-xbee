@@ -1,0 +1,12 @@
+{
+    "configurations": [
+        {
+            "name": "Esp32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Projekte/esp/esp-idf/**"
+            ]
+        }
+    ],
+    "version": 4
+}
