@@ -1168,6 +1168,26 @@
                             </div>
                         </div>
                     </div>
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            Websocket server
+                            <small class="websocket-server-stats stream-stats" data-stream="websocket_server"></small>
+                            <div class="custom-control custom-switch d-inline float-right">
+                                <input type="checkbox" name="wbsck_cli_active" value="1" class="custom-control-input" id="switch-websocket-server">
+                                <label class="custom-control-label" for="switch-websocket-server"></label>
+                            </div>
+                            <div class="d-inline mr-1 float-right">
+                                <input type="color" name="wbsck_cli_color" data-disable-if="#switch-websocket-server" value="#ffffff" id="color-websocket-server">
+                            </div>
+                        </div>
+                        <div class="card-body" data-disable-if="#switch-websocket-server">
+                            <div class="form-row mb-3">
+                                <div class="col-8">
+                                    <label>You can now connect with any Websocket client to get the NMEA messages.</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </form>
