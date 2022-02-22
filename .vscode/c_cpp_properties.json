@@ -1,11 +1,15 @@
 {
     "configurations": [
         {
-            "name": "Esp32",
+            "name": "esp32",
             "includePath": [
                 "${workspaceFolder}/**",
                 "C:/Projekte/esp/esp-idf/**"
-            ]
+            ],
+            "intelliSenseMode": "windows-msvc-x64",
+            "compilerPath": "C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.30.30705/bin/Hostx64/x64/cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17"
         }
     ],
     "version": 4
