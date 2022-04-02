@@ -106,6 +106,10 @@ typedef struct config_item {
 #define KEY_CONFIG_SOCKET_CLIENT_TYPE_TCP_UDP "sck_cli_type"
 #define KEY_CONFIG_SOCKET_CLIENT_CONNECT_MESSAGE "sck_cli_msg"
 
+// Websocket
+#define KEY_CONFIG_WEBSOCKET_SERVER_ACTIVE "wbsck_srv_active"
+#define KEY_CONFIG_WEBSOCKET_SERVER_COLOR "wbsck_srv_color"
+
 // UART
 #define KEY_CONFIG_UART_NUM "uart_num"
 #define KEY_CONFIG_UART_TX_PIN "uart_tx_pin"
