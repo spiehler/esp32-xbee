@@ -33,7 +33,10 @@
 #include <stream_stats.h>
 #include <esp32/rom/crc.h>
 #include <lwip/sockets.h>
+#include "keep_alive.h"
+#include "websocket_server.h"
 #include "web_server.h"
+#include "uart.h"
 
 // Max length a file path can have on storage
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
@@ -58,6 +61,7 @@ static enum auth_method auth_method;
 
 #define IS_FILE_EXT(filename, ext) \
     (strcasecmp(&filename[strlen(filename) - sizeof(ext) + 1], ext) == 0)
+
 
 static esp_err_t www_spiffs_init() {
     ESP_LOGD(TAG, "Initializing SPIFFS");
@@ -740,102 +744,14 @@ static esp_err_t register_uri_handler(httpd_handle_t server, const char *path, h
     return httpd_register_uri_handler(server, &uri_config_get);
 }
 
-// specific code for web sockets
-
-/*
- * Structure holding server handle
- * and internal socket fd in order
- * to use out of request send
- */
-struct async_resp_arg {
-    httpd_handle_t hd;
-    int fd;
-};
-
-/*
- * async send function, which we put into the httpd work queue
- */
-static void ws_async_send(void *arg)
-{
-    static const char * data = "Async data";
-    struct async_resp_arg *resp_arg = arg;
-    httpd_handle_t hd = resp_arg->hd;
-    int fd = resp_arg->fd;
-    httpd_ws_frame_t ws_pkt;
-    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.payload = (uint8_t*)data;
-    ws_pkt.len = strlen(data);
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-
-    httpd_ws_send_frame_async(hd, fd, &ws_pkt);
-    free(resp_arg);
-}
-
-static esp_err_t trigger_async_send(httpd_handle_t handle, httpd_req_t *req)
-{
-    struct async_resp_arg *resp_arg = malloc(sizeof(struct async_resp_arg));
-    resp_arg->hd = req->handle;
-    resp_arg->fd = httpd_req_to_sockfd(req);
-    return httpd_queue_work(handle, ws_async_send, resp_arg);
-}
-
-static esp_err_t websocket_handler(httpd_req_t *req) {
-    if (req->method == HTTP_GET) {
-        ESP_LOGI(TAG, "Handshake done, the new connection was opened");
-        return ESP_OK;
-    }
-    httpd_ws_frame_t ws_pkt;
-    uint8_t *buf = NULL;
-    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-    /* Set max_len = 0 to get the frame len */
-    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "httpd_ws_recv_frame failed to get frame len with %d", ret);
-        return ret;
-    }
-    ESP_LOGI(TAG, "frame len is %d", ws_pkt.len);
-    if (ws_pkt.len) {
-        /* ws_pkt.len + 1 is for NULL termination as we are expecting a string */
-        buf = calloc(1, ws_pkt.len + 1);
-        if (buf == NULL) {
-            ESP_LOGE(TAG, "Failed to calloc memory for buf");
-            return ESP_ERR_NO_MEM;
-        }
-        ws_pkt.payload = buf;
-        /* Set max_len = ws_pkt.len to get the frame payload */
-        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "httpd_ws_recv_frame failed with %d", ret);
-            free(buf);
-            return ret;
-        }
-        ESP_LOGI(TAG, "Got packet with message: %s", ws_pkt.payload);
-    }
-    ESP_LOGI(TAG, "Packet type: %d", ws_pkt.type);
-    if (ws_pkt.type == HTTPD_WS_TYPE_TEXT &&
-        strcmp((char*)ws_pkt.payload,"Trigger async") == 0) {
-        free(buf);
-        return trigger_async_send(req->handle, req);
-    }
-
-    ret = httpd_ws_send_frame(req, &ws_pkt);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "httpd_ws_send_frame failed with %d", ret);
-    }
-    free(buf);
-    return ret;
-}
-
 static const httpd_uri_t ws = {
         .uri        = "/ws",
         .method     = HTTP_GET,
-        .handler    = websocket_handler,
+        .handler    = ws_handler,
         .user_ctx   = NULL,
-        .is_websocket = true
+        .is_websocket = true,
+        .handle_ws_control_frames = true
 };
-
-// end specific code for web sockets
 
 static httpd_handle_t web_server_start(void)
 {
@@ -849,9 +765,21 @@ static httpd_handle_t web_server_start(void)
         free(password);
     }
 
+    // Prepare keep-alive engine
+    wss_keep_alive_config_t keep_alive_config = KEEP_ALIVE_CONFIG_DEFAULT();
+    //keep_alive_config.max_clients = max_clients;
+    keep_alive_config.client_not_alive_cb = client_not_alive_cb;
+    keep_alive_config.check_client_alive_cb = check_client_alive_cb;
+    wss_keep_alive_t keep_alive = wss_keep_alive_start(&keep_alive_config);
+
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
+    // special websocket configuration
+    config.max_open_sockets = max_clients;
+    config.global_user_ctx = keep_alive;
+    config.open_fn = wss_open_fd;
+    config.close_fn = wss_close_fd;
 
     // Start the httpd server
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
@@ -866,6 +794,7 @@ static httpd_handle_t web_server_start(void)
 
         register_uri_handler(server, "/wifi/scan", HTTP_GET, wifi_scan_get_handler);
 
+        // register handler for websocket
         httpd_register_uri_handler(server, &ws);
 
         // register as last endpoint
@@ -879,8 +808,12 @@ static httpd_handle_t web_server_start(void)
 
     buffer = malloc(BUFFER_SIZE);
 
+    // start websocket sender
+    wss_server_send_messages(&server);
+
     return server;
 }
+
 
 void web_server_init() {
     www_spiffs_init();

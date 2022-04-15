@@ -1,4 +1,4 @@
-idf_component_register(SRCS "main.c"
+idf_component_register(SRCS "keep_alive.c" "websocket_server.c" "main.c"
 		"config.c"
 		"core_dump.c"
 		"log.c"
