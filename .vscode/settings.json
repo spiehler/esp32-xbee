@@ -3,7 +3,9 @@
   "idf.adapterTargetName": "esp32",
   "files.associations": {
     "websocket_server.h": "c",
-    "keep_alive.h": "c"
+    "keep_alive.h": "c",
+    "socket_server.h": "c",
+    "*.ipp": "c"
   },
   "idf.portWin": "COM12"
 }

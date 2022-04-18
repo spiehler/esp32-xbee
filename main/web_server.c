@@ -33,7 +33,7 @@
 #include <stream_stats.h>
 #include <esp32/rom/crc.h>
 #include <lwip/sockets.h>
-#include "keep_alive.h"
+//#include "keep_alive.h"
 #include "websocket_server.h"
 #include "web_server.h"
 #include "uart.h"
@@ -749,8 +749,8 @@ static const httpd_uri_t ws = {
         .method     = HTTP_GET,
         .handler    = ws_handler,
         .user_ctx   = NULL,
-        .is_websocket = true,
-        .handle_ws_control_frames = true
+        .is_websocket = true
+        //.handle_ws_control_frames = true
 };
 
 static httpd_handle_t web_server_start(void)
@@ -766,18 +766,18 @@ static httpd_handle_t web_server_start(void)
     }
 
     // Prepare keep-alive engine
-    wss_keep_alive_config_t keep_alive_config = KEEP_ALIVE_CONFIG_DEFAULT();
+    //wss_keep_alive_config_t keep_alive_config = KEEP_ALIVE_CONFIG_DEFAULT();
     //keep_alive_config.max_clients = max_clients;
-    keep_alive_config.client_not_alive_cb = client_not_alive_cb;
-    keep_alive_config.check_client_alive_cb = check_client_alive_cb;
-    wss_keep_alive_t keep_alive = wss_keep_alive_start(&keep_alive_config);
+    //keep_alive_config.client_not_alive_cb = client_not_alive_cb;
+    //keep_alive_config.check_client_alive_cb = check_client_alive_cb;
+    //wss_keep_alive_t keep_alive = wss_keep_alive_start(&keep_alive_config);
 
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
     // special websocket configuration
     config.max_open_sockets = max_clients;
-    config.global_user_ctx = keep_alive;
+    //config.global_user_ctx = keep_alive;
     config.open_fn = wss_open_fd;
     config.close_fn = wss_close_fd;
 

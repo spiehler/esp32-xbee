@@ -19,6 +19,8 @@ void wss_server_send_messages(httpd_handle_t* server);
 struct async_resp_arg {
     httpd_handle_t hd;
     int fd;
+    void* data;
+    int32_t data_len;
 };
 
 static const size_t max_clients = 10;

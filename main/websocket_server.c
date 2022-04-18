@@ -16,10 +16,14 @@
  */
 
 #include <esp_log.h>
-#include "keep_alive.h"
+#include <esp_event_base.h>
+//#include "keep_alive.h"
 #include "websocket_server.h"
+#include "uart.h"
 
-static const char *TAG = "wss_server";
+static const char *TAG = "WEBSOCKET_SERVER";
+httpd_handle_t http_server = NULL;
+
 
 esp_err_t ws_handler(httpd_req_t *req)
 {
@@ -90,15 +94,16 @@ esp_err_t ws_handler(httpd_req_t *req)
 esp_err_t wss_open_fd(httpd_handle_t hd, int sockfd)
 {
     ESP_LOGI(TAG, "New client connected %d", sockfd);
-    wss_keep_alive_t h = httpd_get_global_user_ctx(hd);
-    return wss_keep_alive_add_client(h, sockfd);
+    //wss_keep_alive_t h = httpd_get_global_user_ctx(hd);
+    //return wss_keep_alive_add_client(h, sockfd);
+    return 0;
 }
 
 void wss_close_fd(httpd_handle_t hd, int sockfd)
 {
     ESP_LOGI(TAG, "Client disconnected %d", sockfd);
-    wss_keep_alive_t h = httpd_get_global_user_ctx(hd);
-    wss_keep_alive_remove_client(h, sockfd);
+    //wss_keep_alive_t h = httpd_get_global_user_ctx(hd);
+    //wss_keep_alive_remove_client(h, sockfd);
 }
 
 void send_hello(void *arg)
@@ -132,6 +137,24 @@ void send_ping(void *arg)
     free(resp_arg);
 }
 
+void send_uart(void *arg)
+{
+    struct async_resp_arg *resp_arg = arg;
+    httpd_handle_t hd = resp_arg->hd;
+    int fd = resp_arg->fd;
+    httpd_ws_frame_t ws_pkt;
+    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
+    ws_pkt.payload = (uint8_t *)resp_arg->data;
+    ws_pkt.len = resp_arg->data_len;
+    // text is not working due to wrong utf-8 sequence
+    // maybe in future find a solution???
+    //ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+    ws_pkt.type = HTTPD_WS_TYPE_BINARY;
+
+    httpd_ws_send_frame_async(hd, fd, &ws_pkt);
+    free(resp_arg);
+}
+
 bool client_not_alive_cb(wss_keep_alive_t h, int fd)
 {
     ESP_LOGE(TAG, "Client not alive, closing fd %d", fd);
@@ -154,37 +177,26 @@ bool check_client_alive_cb(wss_keep_alive_t h, int fd)
     return false;
 }
 
-// Get all clients and send async message
-void wss_server_send_messages(httpd_handle_t *server)
-{
-    bool send_messages = true;
-
-    // Send async message to all connected clients that use websocket protocol every 10 seconds
-    while (send_messages)
-    {
-        vTaskDelay(10000 / portTICK_PERIOD_MS);
-
-        if (!*server)
+static void websocket_server_uart_handler(void* handler_args, esp_event_base_t base, int32_t length, void* buf) {
+    if (http_server)
         { // httpd might not have been created by now
-            continue;
-        }
         size_t clients = max_clients;
         int client_fds[max_clients];
-        if (httpd_get_client_list(*server, &clients, client_fds) == ESP_OK)
+        if (httpd_get_client_list(http_server, &clients, client_fds) == ESP_OK)
         {
             for (size_t i = 0; i < clients; ++i)
             {
                 int sock = client_fds[i];
-                if (httpd_ws_get_fd_info(*server, sock) == HTTPD_WS_CLIENT_WEBSOCKET)
+                if (httpd_ws_get_fd_info(http_server, sock) == HTTPD_WS_CLIENT_WEBSOCKET)
                 {
-                    ESP_LOGI(TAG, "Active client (fd=%d) -> sending async message", sock);
                     struct async_resp_arg *resp_arg = malloc(sizeof(struct async_resp_arg));
-                    resp_arg->hd = *server;
+                    resp_arg->hd = http_server;
                     resp_arg->fd = sock;
-                    if (httpd_queue_work(resp_arg->hd, send_hello, resp_arg) != ESP_OK)
+                    resp_arg->data = buf;
+                    resp_arg->data_len = length;
+                    if (httpd_queue_work(resp_arg->hd, send_uart, resp_arg) != ESP_OK)
                     {
                         ESP_LOGE(TAG, "httpd_queue_work failed!");
-                        send_messages = false;
                         break;
                     }
                 }
@@ -196,4 +208,11 @@ void wss_server_send_messages(httpd_handle_t *server)
             return;
         }
     }
+}
+
+// Get all clients and send async message
+void wss_server_send_messages(httpd_handle_t *server)
+{
+    http_server = *server;
+    uart_register_read_handler(websocket_server_uart_handler);
 }

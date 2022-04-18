@@ -43,7 +43,7 @@ typedef struct wss_keep_alive_storage {
 
 typedef struct wss_keep_alive_storage* wss_keep_alive_t;
 
-static const char *TAG = "wss_keep_alive";
+static const char *TAG = "WEBSOCKET_SERVER_KEEP_ALIVE";
 
 static uint64_t _tick_get_ms(void)
 {
